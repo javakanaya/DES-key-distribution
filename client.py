@@ -254,9 +254,7 @@ if __name__ == "__main__":
         while True:
             time.sleep(0.1)
             if state == 'listen':
-                print("a1")
                 if target_id is None:
-                    print("a1x")
 
                     # Prompt the user for the initial target client ID
                     while True:
@@ -296,7 +294,6 @@ if __name__ == "__main__":
                         target_id = int(target_id_str)
                         state = 'chat'
 
-                print("a1y")
                 print("Getting session...")
                 # Send the input to the server
                 selected_public_keys = public_keys[int(target_id)]
@@ -321,7 +318,6 @@ if __name__ == "__main__":
             elif state == 'chat':
                 message = input(
                     f"Enter the message to {target_id} ('b' to stop chatting): ")
-
                 if message.lower() == 'b':
                     # Choose a new target client
                     state = 'listen'
