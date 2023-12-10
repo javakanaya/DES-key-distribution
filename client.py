@@ -1,13 +1,22 @@
 import socket
 import threading
 import random
+from encryption.des import text_to_binary, binary_to_text, generateKeys, encrypt, decrypt
 from encryption.rsa import setkeys, encoder, decoder
+import secrets
+import string
 
 global state
 
 
+def generate_random_string(length=8):
+    characters = string.ascii_letters + string.digits
+    random_string = ''.join(secrets.choice(characters) for _ in range(length))
+    return random_string
+
+
 def receive_messages(client_socket):
-    global state, target_id
+    global state, target_id, session_des_key, session_round_key
     try:
         while True:
             # Receive messages from the server
@@ -16,10 +25,10 @@ def receive_messages(client_socket):
                 break
 
             data = eval(data)
-
+            print(data)
             if 'public_keys' in data:
                 public_keys.update(data['public_keys'])
-                
+
                 # Print the received message
                 print(f"\nReceived from server: {data['data']}")
 
@@ -50,7 +59,9 @@ def receive_messages(client_socket):
                     client_socket.send(str({
                         "step": 2,
                         "target_id": bring_back_to,
-                        "data": encrypted_step_2})
+                        "data": encrypted_step_2,
+                        'length': -1
+                    })
                         .encode('utf-8'))
 
                 elif data['step'] == 2:
@@ -59,7 +70,7 @@ def receive_messages(client_socket):
                     recv_n_1_from_step_2 = decrypted['n_1']
                     recv_n_2_from_step_2 = decrypted['n_2']
 
-                    if(n_1 == recv_n_1_from_step_2):
+                    if (n_1 == recv_n_1_from_step_2):
                         print("N1 matches")
                         print(f"{n_1} == {recv_n_1_from_step_2}")
 
@@ -72,52 +83,87 @@ def receive_messages(client_socket):
                     encrypted_step_3 = encoder(
                         str(data_step_3), selected_public_keys, n)
 
-                    client.send(str({
+                    client_socket.send(str({
                         "step": 3,
                         "target_id": bring_back_to,
-                        "data": encrypted_step_3})
+                        "data": encrypted_step_3,
+                        'length': -1
+                    })
                         .encode('utf-8'))
-                
+
                 elif data['step'] == 3:
                     decrypted = eval(decoder(data['data'], private_key, n))
                     bring_back_to = int(data['sender_id'])
                     recv_n_2_from_step_3 = decrypted['n_2']
 
-                    if(n_2 == recv_n_2_from_step_3):
+                    if (n_2 == recv_n_2_from_step_3):
                         print("N2 matches")
                         print(f"{n_2} == {recv_n_2_from_step_3}")
 
+                    state = 'chat'
+
                     data_step_4 = {
                         'n_1': recv_n_1,
-                        'k_s': 'ABCD1234'
+                        'k_s': generated_des_key
                     }
+
+                    session_des_key = generated_des_key
+                    bin_key = text_to_binary(session_des_key)[0]
+                    session_round_key = generateKeys(bin_key)
 
                     selected_public_keys = public_keys[bring_back_to]
 
                     encrypted_step_4 = encoder(
                         str(data_step_4), selected_public_keys, n)
 
-                    client.send(str({
+                    client_socket.send(str({
                         "step": 4,
                         "target_id": bring_back_to,
-                        "data": encrypted_step_4})
+                        "data": encrypted_step_4,
+                        'length': -1
+                    })
                         .encode('utf-8'))
 
                 elif data['step'] == 4:
-                    state = 'chat'
                     target_id = int(data['sender_id'])
                     decrypted = eval(decoder(data['data'], private_key, n))
                     recv_n_1_from_step_4 = decrypted['n_1']
 
-                    if(n_1 == recv_n_1_from_step_4):
+                    if (n_1 == recv_n_1_from_step_4):
                         print("N1 matches")
                         print(f"{n_1} == {recv_n_1_from_step_4}")
-                    des_key = decrypted['k_s']
+
+                    session_des_key = decrypted['k_s']
+                    bin_key = text_to_binary(session_des_key)[0]
+                    session_round_key = generateKeys(bin_key)
+                    print("DES key acquired")
+
+                elif data['step'] == 5:
+                    target_id = int(data['sender_id'])
+                    state = 'chat'
                     print(
                         "\n>>> Another client is sending messages, Refresh client ('R') to reply <<<")
+                    length = data['length']
+                    encrypted_bin_message = data['data']
+                    source = data['sender_id']
 
+                    # Decrypt the message
+                    decrypted_bin_message = ''
+                    for i in range(0, len(encrypted_bin_message), 64):
+                        chunk = encrypted_bin_message[i:i+64]
+                        decrypted_chunk = decrypt(chunk, session_round_key)
+                        decrypted_bin_message += decrypted_chunk
 
+                    # Trim the message to its original length
+                    decrypted_message = binary_to_text(decrypted_bin_message)
 
+                    print(f"Received from {source}:")
+                    print(
+                        f"Raw         : {binary_to_text(encrypted_bin_message)}")
+                    print(f"Decrypted   : {decrypted_message[:length]}")
+
+            else:
+                print(f"\nReceived from server: {data['data']}")
     except Exception as e:
         print(f"\nError receiving messages: {e}")
 
@@ -126,7 +172,11 @@ if __name__ == "__main__":
     public_keys = {}
     state = "listen"
     target_id = None
-    des_key = None
+    generated_des_key = generate_random_string()
+
+    session_des_key = None
+    session_round_key = None
+
     # Set up the client socket
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     client.connect(("127.0.0.1", 12345))
@@ -168,33 +218,63 @@ if __name__ == "__main__":
                         continue
                     elif target_id_str.lower() == 'r':
                         print(public_keys)
+                        print(state)
                         print("Refreshing client")
                         continue
                     else:
                         target_id = int(target_id_str)
                         state = 'chat'
 
-                # Send the input to the server
-                selected_public_keys = public_keys[int(target_id)]
+                if session_des_key is None:
+                    # Send the input to the server
+                    selected_public_keys = public_keys[int(target_id)]
 
-                data_step_1 = {
-                    'n_1': n_1,
-                    'id_a': my_id
-                }
+                    data_step_1 = {
+                        'n_1': n_1,
+                        'id_a': my_id
+                    }
 
-                print(data_step_1)
+                    print(data_step_1)
 
-                encrypted_step_1 = encoder(
-                    str(data_step_1), selected_public_keys, n)
+                    encrypted_step_1 = encoder(
+                        str(data_step_1), selected_public_keys, n)
 
-                client.send(str({
-                    "step": 1,
-                    "target_id": target_id,
-                    "data": encrypted_step_1,
-                })
-                    .encode('utf-8'))
+                    client.send(str({
+                        "step": 1,
+                        "target_id": target_id,
+                        "data": encrypted_step_1,
+                        'length': -1
+                    })
+                        .encode('utf-8'))
 
                 # Prompt the user for the message
+                elif session_des_key is not None:
+                    message = input(
+                        f"Enter the message to {target_id} ('b' to stop chatting): ")
+
+                    if message.lower() == 'b':
+                        # Choose a new target client
+                        state = 'listen'
+                        target_id = None
+                    else:
+
+                        bin_message = text_to_binary(message)
+                        encrypted_bin_message = ''
+                        for chunk in bin_message:
+                            encrypted_bin_message += encrypt(
+                                chunk, session_round_key)
+
+                        # Send the dictionary as a string to the server
+
+                        client.send(str({
+                            'step': 5,
+                            'target_id': target_id,
+                            'length': len(message),
+                            'data': encrypted_bin_message
+                        })
+                            .encode('utf-8'))
+
+            elif state == 'chat':
                 message = input(
                     f"Enter the message to {target_id} ('b' to stop chatting): ")
 
@@ -203,26 +283,21 @@ if __name__ == "__main__":
                     state = 'listen'
                     target_id = None
                 else:
-                    client.send(str({
-                        "target_id": target_id,
-                        "data": message})
-                        .encode('utf-8'))
 
-            elif state == 'chat':
-                # Directly enter the message in chat mode
-                message = input(
-                    f"Enter the message to {target_id} ('b' to stop chatting): ")
+                    bin_message = text_to_binary(message)
+                    encrypted_bin_message = ''
+                    for chunk in bin_message:
+                        encrypted_bin_message += encrypt(chunk,
+                                                         session_round_key)
 
-                if message.lower() == 'b':
-                    # Return to listening mode
-                    state = 'listen'
-                    target_id = None
-                else:
-                    # Send the input to the server
-                    print(public_keys[int(target_id)])
+                    # Send the dictionary as a string to the server
+
                     client.send(str({
-                        "target_id": target_id,
-                        "data": message})
+                        'step': 5,
+                        'target_id': target_id,
+                        'length': len(message),
+                        'data': encrypted_bin_message
+                    })
                         .encode('utf-8'))
 
     except KeyboardInterrupt:

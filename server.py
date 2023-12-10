@@ -3,8 +3,6 @@ import time
 import threading
 
 
-
-
 def handle_client(client_socket, address, client_id, clients):
     print(f"Accepted connection from {address} with ID {client_id}")
     # Send a welcome message to the client
@@ -50,7 +48,7 @@ def handle_client(client_socket, address, client_id, clients):
 
             # Print the received data
             print(
-                f"Received data from {address} (ID {client_id}): {data['data']}")
+                f"Received data from {address} (ID {client_id}): {data}")
 
             # Parse the received data
             try:
@@ -62,7 +60,7 @@ def handle_client(client_socket, address, client_id, clients):
                     target_ids = [int(data['target_id'])]
 
                     # Forward the message to the specified target clients
-                    forward_message(client_id, target_ids, data['data'], data['step'])
+                    forward_message(client_id, target_ids, data['data'], data['step'], data['length'])
             except ValueError as e:
                 print(f"Invalid format received from client {client_id}: {e}")
 
@@ -78,7 +76,7 @@ def handle_client(client_socket, address, client_id, clients):
         client_socket.close()
 
 
-def forward_message(sender_id, target_ids, message, step):
+def forward_message(sender_id, target_ids, message, step, length):
     # Forward the message to the specified target clients
     for target_id in target_ids:
         try:
@@ -88,6 +86,7 @@ def forward_message(sender_id, target_ids, message, step):
                     'step': step,
                     'sender_id': sender_id,
                     'data': message,
+                    'length': length
                 }).encode('utf-8'))
         except Exception as e:
             print(f"Error forwarding message to client {target_id}: {e}")
