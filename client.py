@@ -5,8 +5,23 @@ from encryption.des import text_to_binary, binary_to_text, generateKeys, encrypt
 from encryption.rsa import setkeys, encoder, decoder
 import secrets
 import string
+import time
 
 global state
+
+
+def print_message_box(header, lines):
+    max_line_length = max(len(line) for line in lines)
+    border = "+" + "-" * (max_line_length + 2) + "+"
+
+    header_row = f"| {header.center(max_line_length)} |"
+    content_rows = [f"| {line.ljust(max_line_length)} |" for line in lines]
+
+    rows = [border, header_row, border] + content_rows + [border]
+
+    print("")
+    for row in rows:
+        print(row)
 
 
 def generate_random_string(length=8):
@@ -19,28 +34,40 @@ def receive_messages(client_socket):
     global state, target_id, session_des_key, session_round_key
     try:
         while True:
+
             # Receive messages from the server
             data = client_socket.recv(1024).decode('utf-8')
             if not data:
                 break
 
             data = eval(data)
-            print(data)
             if 'public_keys' in data:
                 public_keys.update(data['public_keys'])
 
-                # Print the received message
-                print(f"\nReceived from server: {data['data']}")
+                # Example usage:
+                header = f"Received"
+                lines = [
+                    f"{data['data']}",
+                ]
+
+                print_message_box(header, lines)
+
 
             elif 'public_key' in data:
                 public_keys[data['client_id']] = data['public_key']
-                # Print the received message
-                print(f"\nReceived from server: {data['data']}")
+
+                header = f"Received"
+                lines = [
+                    f"{data['data']}",
+                ]
+
+                print_message_box(header, lines)
 
             elif 'step' in data:
-                print(data['step'])
                 # print(data['data'])
                 if data['step'] == 1:
+                    print(
+                        "\n>>> Another client is sending messages, Refresh client ('R') to reply <<<")
                     decrypted = eval(decoder(data['data'], private_key, n))
                     bring_back_to = data['sender_id']
                     recv_n_1_from_step_1 = decrypted['n_1']
@@ -70,9 +97,16 @@ def receive_messages(client_socket):
                     recv_n_1_from_step_2 = decrypted['n_1']
                     recv_n_2_from_step_2 = decrypted['n_2']
 
+
+                    if n_1 != recv_n_1_from_step_2:
+                        raise ValueError("N1 did not match!")
+
                     if (n_1 == recv_n_1_from_step_2):
-                        print("N1 matches")
-                        print(f"{n_1} == {recv_n_1_from_step_2}")
+                        print("+--------------------------------+")
+                        print("|          N1 matches            |")
+                        print(
+                            f"|          {n_1} == {recv_n_1_from_step_2}          |")
+                        print("+--------------------------------+")
 
                     data_step_3 = {
                         'n_2': recv_n_2_from_step_2
@@ -96,9 +130,15 @@ def receive_messages(client_socket):
                     bring_back_to = int(data['sender_id'])
                     recv_n_2_from_step_3 = decrypted['n_2']
 
+                    if n_2 != recv_n_2_from_step_3:
+                        raise ValueError("N2 did not match!")
+
                     if (n_2 == recv_n_2_from_step_3):
-                        print("N2 matches")
-                        print(f"{n_2} == {recv_n_2_from_step_3}")
+                        print("+--------------------------------+")
+                        print("|          N2 matches            |")
+                        print(
+                            f"|          {n_2} == {recv_n_2_from_step_3}          |")
+                        print("+--------------------------------+")
 
                     state = 'chat'
 
@@ -129,20 +169,26 @@ def receive_messages(client_socket):
                     decrypted = eval(decoder(data['data'], private_key, n))
                     recv_n_1_from_step_4 = decrypted['n_1']
 
+                    if n_1 != recv_n_1_from_step_4:
+                        raise ValueError("N1 did not match!")
+
                     if (n_1 == recv_n_1_from_step_4):
-                        print("N1 matches")
-                        print(f"{n_1} == {recv_n_1_from_step_4}")
+                        print("+--------------------------------+")
+                        print("|          N1 matches            |")
+                        print(
+                            f"|          {n_1} == {recv_n_1_from_step_4}          |")
+                        print("+--------------------------------+")
 
                     session_des_key = decrypted['k_s']
                     bin_key = text_to_binary(session_des_key)[0]
                     session_round_key = generateKeys(bin_key)
-                    print("DES key acquired")
+                    print(">>> Session Acquired <<<")
+                    print(" - DES key acquired")
+                    print(f" - connected to client ID: {target_id}")
 
                 elif data['step'] == 5:
                     target_id = int(data['sender_id'])
                     state = 'chat'
-                    print(
-                        "\n>>> Another client is sending messages, Refresh client ('R') to reply <<<")
                     length = data['length']
                     encrypted_bin_message = data['data']
                     source = data['sender_id']
@@ -157,10 +203,14 @@ def receive_messages(client_socket):
                     # Trim the message to its original length
                     decrypted_message = binary_to_text(decrypted_bin_message)
 
-                    print(f"Received from {source}:")
-                    print(
-                        f"Raw         : {binary_to_text(encrypted_bin_message)}")
-                    print(f"Decrypted   : {decrypted_message[:length]}")
+                    # Print the message in a box :)
+                    header = f"Received from {source}:"
+                    lines = [
+                        f"Raw           : {binary_to_text(encrypted_bin_message)}",
+                        f"Decrypted   : {decrypted_message[:length]}"
+                    ]
+
+                    print_message_box(header, lines)
 
             else:
                 print(f"\nReceived from server: {data['data']}")
@@ -193,7 +243,7 @@ if __name__ == "__main__":
 
     # Receive the welcome message from the server
     welcome_msg = eval(client.recv(1024).decode('utf-8'))
-    print(f"Server says: {welcome_msg['data']}")
+    print(welcome_msg['data'])
     my_id = welcome_msg['client_id']
 
     # Start a thread to receive messages from the server
@@ -202,77 +252,71 @@ if __name__ == "__main__":
 
     try:
         while True:
+            time.sleep(0.1)
             if state == 'listen':
+                print("a1")
                 if target_id is None:
+                    print("a1x")
+
                     # Prompt the user for the initial target client ID
-                    target_id_str = input(
-                        "Enter target client ID ('L' to show the list of connected clients, 'Ctrl + C' to quit, 'R' to refresh): ")
+                    while True:
+                        target_id_str = input(
+                            "Enter target client ID ('L' to show the list of connected clients, 'Ctrl + C' to quit, 'R' to refresh): ")
+
+                        # Check if the input is a number or one of the specified letters
+                        if target_id_str.isdigit():
+                            target_id = int(target_id_str)
+
+                            # Check if the selected client ID exists in public_keys
+                            if target_id in public_keys:
+                                break
+                            else:
+                                print(
+                                    "You can't send messages to yourself, choose another client ID")
+                        elif target_id_str.strip().upper() in ['L', 'Q', 'R']:
+                            break
+                        else:
+                            print(
+                                "Invalid input. Please enter a valid number or one of the specified letters.")
+
                     if target_id_str.lower() == 'q':
                         break
 
                     if target_id_str.lower() == 'l':
+                        target_id = None
                         # Handle request to show the list of connected clients
                         client.send(str({
                             "data": 'L'})
                             .encode('utf-8'))
                         continue
                     elif target_id_str.lower() == 'r':
-                        print(public_keys)
-                        print(state)
                         print("Refreshing client")
                         continue
                     else:
                         target_id = int(target_id_str)
                         state = 'chat'
 
-                if session_des_key is None:
-                    # Send the input to the server
-                    selected_public_keys = public_keys[int(target_id)]
+                print("a1y")
+                print("Getting session...")
+                # Send the input to the server
+                selected_public_keys = public_keys[int(target_id)]
 
-                    data_step_1 = {
-                        'n_1': n_1,
-                        'id_a': my_id
-                    }
+                data_step_1 = {
+                    'n_1': n_1,
+                    'id_a': my_id
+                }
 
-                    print(data_step_1)
+                encrypted_step_1 = encoder(
+                    str(data_step_1), selected_public_keys, n)
 
-                    encrypted_step_1 = encoder(
-                        str(data_step_1), selected_public_keys, n)
-
-                    client.send(str({
-                        "step": 1,
-                        "target_id": target_id,
-                        "data": encrypted_step_1,
-                        'length': -1
-                    })
-                        .encode('utf-8'))
-
-                # Prompt the user for the message
-                elif session_des_key is not None:
-                    message = input(
-                        f"Enter the message to {target_id} ('b' to stop chatting): ")
-
-                    if message.lower() == 'b':
-                        # Choose a new target client
-                        state = 'listen'
-                        target_id = None
-                    else:
-
-                        bin_message = text_to_binary(message)
-                        encrypted_bin_message = ''
-                        for chunk in bin_message:
-                            encrypted_bin_message += encrypt(
-                                chunk, session_round_key)
-
-                        # Send the dictionary as a string to the server
-
-                        client.send(str({
-                            'step': 5,
-                            'target_id': target_id,
-                            'length': len(message),
-                            'data': encrypted_bin_message
-                        })
-                            .encode('utf-8'))
+                client.send(str({
+                    "step": 1,
+                    "target_id": target_id,
+                    "data": encrypted_step_1,
+                    'length': -1
+                })
+                    .encode('utf-8'))
+                continue
 
             elif state == 'chat':
                 message = input(

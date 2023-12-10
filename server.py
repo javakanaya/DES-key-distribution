@@ -23,7 +23,7 @@ def handle_client(client_socket, address, client_id, clients):
             client_item_socket.send(str({
                 'client_id': client_id,
                 'public_key': public_key,
-                'data': f"New Client ID: {client_id} Public Key"
+                'data': f"Public Key for New Client ID: {client_id} "
             }).encode('utf-8'))
 
     time.sleep(0.5)
