@@ -1,6 +1,7 @@
 import socket
 import threading
-from encryption.rsa import setkeys
+import random
+from encryption.rsa import setkeys, encoder, decoder
 
 global state
 
@@ -16,20 +17,87 @@ def receive_messages(client_socket):
 
             data = eval(data)
 
-            if 'sender_id' in data:
-                state = 'chat'
-                target_id = data['sender_id']
-                print(
-                    "\nAnother client is sending messages, Refresh client ('R') to reply")
+            if 'public_keys' in data:
+                public_keys.update(data['public_keys'])
+                
+                # Print the received message
+                print(f"\nReceived from server: {data['data']}")
 
-            # Print the received message
-            print(f"\nReceived from server: {data['data']}")
+            elif 'public_key' in data:
+                public_keys[data['client_id']] = data['public_key']
+                # Print the received message
+                print(f"\nReceived from server: {data['data']}")
+
+            elif 'step' in data:
+                print(data)
+                print(data['step'])
+                n_2 = random.randint(1000, 9999)
+                # print(data['data'])
+                if data['step'] == 1:
+                    decrypted = eval(decoder(data['data'], private_key, n))
+                    print(decrypted)
+                    sender_id = data['sender_id']
+                    recv_n_1_from_step_1 = decrypted['n_1']
+
+                    data_step_2 = {
+                        'n_1': recv_n_1_from_step_1,
+                        'n_2': n_2
+                    }
+
+                    print(data_step_2)
+
+
+                    selected_public_keys = public_keys[sender_id]
+
+                    encrypted_step_2 = encoder(
+                        str(data_step_2), selected_public_keys, n)
+
+                    client_socket.send(str({
+                        "step": 2,
+                        "target_id": sender_id,
+                        "data": encrypted_step_2})
+                        .encode('utf-8'))
+
+                elif data['step'] == 2:
+                    decrypted = eval(decoder(data['data'], private_key, n))
+                    sender_id = int(data['sender_id'])
+                    recv_n_1_from_step_2 = decrypted['n_1']
+                    recv_n_2_from_step_2 = decrypted['n_2']
+
+                    print(recv_n_1_from_step_2, n_1, recv_n_2_from_step_2)
+
+                    data_step_3 = {
+                        'n_2': recv_n_2_from_step_2
+                    }
+
+                    print(data_step_3)
+
+                    selected_public_keys = public_keys[sender_id]
+
+                    encrypted_step_3 = encoder(
+                        str(data_step_2), selected_public_keys)
+
+                    client.send(str({
+                        "step": 2,
+                        "target_id": sender_id,
+                        "data": encrypted_step_3})
+                        .encode('utf-8'))
+                
+
+                elif data['step'] == 5:
+                    state = 'chat'
+                    target_id = data['sender_id']
+                    print(
+                        "\n>>> Another client is sending messages, Refresh client ('R') to reply <<<")
+
+
 
     except Exception as e:
         print(f"\nError receiving messages: {e}")
 
 
 if __name__ == "__main__":
+    public_keys = {}
     state = "listen"
     target_id = None
     # Set up the client socket
@@ -37,10 +105,17 @@ if __name__ == "__main__":
     client.connect(("127.0.0.1", 12345))
 
     public_key, private_key, n = setkeys()
+    n_1 = random.randint(1000, 9999)
+
+    print(f"Your private key is {private_key}")
+    client.send(str({
+        "public_key": public_key})
+        .encode('utf-8'))
 
     # Receive the welcome message from the server
-    welcome_msg = client.recv(1024)
-    print(f"Server says: {eval(welcome_msg.decode('utf-8'))['data']}")
+    welcome_msg = eval(client.recv(1024).decode('utf-8'))
+    print(f"Server says: {welcome_msg['data']}")
+    my_id = welcome_msg['client_id']
 
     # Start a thread to receive messages from the server
     receive_thread = threading.Thread(target=receive_messages, args=(client,))
@@ -63,6 +138,7 @@ if __name__ == "__main__":
                             .encode('utf-8'))
                         continue
                     elif target_id_str.lower() == 'r':
+                        print(public_keys)
                         print("Refreshing client")
                         continue
                     else:
@@ -78,11 +154,30 @@ if __name__ == "__main__":
                     state = 'listen'
                     target_id = None
                 else:
-                    # Send the input to the server in the format "target_id:message"
+                    # Send the input to the server
+                    selected_public_keys = public_keys[int(target_id)]
+
+                    data_step_1 = {
+                        'n_1': n_1,
+                        'id_a': my_id
+                    }
+
+                    print(data_step_1)
+
+                    encrypted_step_1 = encoder(
+                        str(data_step_1), selected_public_keys, n)
+
                     client.send(str({
+                        "step": 1,
                         "target_id": target_id,
-                        "data": message})
+                        "data": encrypted_step_1,
+                    })
                         .encode('utf-8'))
+
+                    # client.send(str({
+                    #     "target_id": target_id,
+                    #     "data": message})
+                    #     .encode('utf-8'))
 
             elif state == 'chat':
                 # Directly enter the message in chat mode
@@ -94,7 +189,8 @@ if __name__ == "__main__":
                     state = 'listen'
                     target_id = None
                 else:
-                    # Send the input to the server in the format "target_id:message"
+                    # Send the input to the server
+                    print(public_keys[int(target_id)])
                     client.send(str({
                         "target_id": target_id,
                         "data": message})

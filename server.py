@@ -1,16 +1,43 @@
 import socket
+import time
 import threading
 
 
-def handle_client(client_socket, address, client_id):
+
+
+def handle_client(client_socket, address, client_id, clients):
     print(f"Accepted connection from {address} with ID {client_id}")
-
-    # public_key = eval(client_socket.recv(1024).decode('utf-8'))['data']
-
     # Send a welcome message to the client
     client_socket.send(str({
-        'data': f"Welcome to the server! Your ID is {client_id}"
+        'data': f"Welcome to the server! Your ID is {client_id}",
+        'client_id': client_id
     }).encode('utf-8'))
+
+    time.sleep(0.5)
+
+    # recieve the new client public key
+    public_key = eval(client_socket.recv(
+        1024).decode('utf-8'))['public_key']
+
+    # Send the new public key to all old clients
+    for _, client_item_socket in clients.items():
+        if client_item_socket != client_socket:
+            client_item_socket.send(str({
+                'client_id': client_id,
+                'public_key': public_key,
+                'data': f"New Client ID: {client_id} Public Key"
+            }).encode('utf-8'))
+
+    time.sleep(0.5)
+
+    # Send the public keys to the new client
+    client_socket.send(str({
+        'public_keys': public_keys,
+        'data': "Public Keys Dictionary"
+    }).encode('utf-8'))
+
+    # update server public keys dictionary
+    public_keys[client_id] = public_key
 
     try:
         while True:
@@ -35,7 +62,7 @@ def handle_client(client_socket, address, client_id):
                     target_ids = [int(data['target_id'])]
 
                     # Forward the message to the specified target clients
-                    forward_message(client_id, target_ids, data['data'])
+                    forward_message(client_id, target_ids, data['data'], data['step'])
             except ValueError as e:
                 print(f"Invalid format received from client {client_id}: {e}")
 
@@ -51,15 +78,16 @@ def handle_client(client_socket, address, client_id):
         client_socket.close()
 
 
-def forward_message(sender_id, target_ids, message):
+def forward_message(sender_id, target_ids, message, step):
     # Forward the message to the specified target clients
     for target_id in target_ids:
         try:
             target_socket = clients.get(target_id)
             if target_socket and target_id != sender_id:
                 target_socket.send(str({
+                    'step': step,
                     'sender_id': sender_id,
-                    'data': f"Message from {sender_id}: {message}"
+                    'data': message,
                 }).encode('utf-8'))
         except Exception as e:
             print(f"Error forwarding message to client {target_id}: {e}")
@@ -77,6 +105,7 @@ def send_client_list(client_id):
 if __name__ == "__main__":
     # Dictionary to store connected clients and their sockets
     clients = {}
+    public_keys = {}
     # Set up the server socket
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.bind(("127.0.0.1", 12345))
@@ -97,7 +126,7 @@ if __name__ == "__main__":
 
             # Start a new thread to handle the client
             client_handler = threading.Thread(
-                target=handle_client, args=(client_socket, addr, client_id))
+                target=handle_client, args=(client_socket, addr, client_id, clients))
             client_handler.start()
 
     except KeyboardInterrupt:

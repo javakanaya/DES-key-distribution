@@ -3,8 +3,8 @@ import math
 
 
 def setkeys():
-    prime1 = 7  # First prime number
-    prime2 = 11  # Second prime number
+    prime1 = 23 # First prime number
+    prime2 = 19  # Second prime number
 
     n = prime1 * prime2
     phi_n = (prime1 - 1) * (prime2 - 1)
@@ -51,17 +51,17 @@ def decrypt(encrypted_text, private_key, n):
 # First converting each character to its ASCII value and
 # then encoding it then decoding the number to get the
 # ASCII and converting it to character
-def encoder(message):
+def encoder(message, public_key, n):
     encoded = []
     # Calling the encrypting function in encoding function
     for letter in message:
-        encoded.append(encrypt(ord(letter)))
+        encoded.append(encrypt(ord(letter), public_key, n))
     return encoded
 
 
-def decoder(encoded):
+def decoder(encoded, private_key, n) :
     s = ''
     # Calling the decrypting function decoding function
     for num in encoded:
-        s += chr(decrypt(num))
+        s += chr(decrypt(num, private_key, n))
     return s
